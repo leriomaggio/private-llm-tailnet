@@ -1,0 +1,14 @@
+[project]
+name = "private-llm-tailnet"
+version = "0.1.0"
+description = "Serve a local LLM over a private Tailscale network"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = { file = "LICENSE" }
+authors = [{ name = "Valerio Maggio" }]
+dependencies = [
+    "mlx-lm>=0.21",
+]
+
+[tool.uv]
+package = false

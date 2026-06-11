@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# macOS
+.DS_Store
+.AppleDouble
+._*
+
+# Model artefacts and caches
+models/
+*.gguf
+*.safetensors
+.cache/
+
+# Local state
+.run/
+*.log
+*.pid
+.env
