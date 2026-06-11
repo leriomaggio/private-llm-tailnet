@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Private LLM</title>
+<style>
+  :root {
+    --bg: #f6f6f4;
+    --fg: #1f2328;
+    --muted: #6e7681;
+    --surface: #ffffff;
+    --border: #d7dade;
+    --accent: #4b70f5;
+    --accent-fg: #ffffff;
+    --user-bubble: #e3e9ff;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c;
+      --fg: #e6e8eb;
+      --muted: #8b939e;
+      --surface: #1f2329;
+      --border: #33383f;
+      --accent: #6c8bff;
+      --accent-fg: #0e1116;
+      --user-bubble: #2a3350;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.9rem;
+    padding-top: calc(0.6rem + env(safe-area-inset-top));
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  header h1 { font-size: 1rem; margin: 0; font-weight: 600; flex: 1; }
+  header .dot {
+    width: 0.6rem; height: 0.6rem; border-radius: 50%;
+    background: var(--muted);
+  }
+  header .dot.ok { background: #3fb950; }
+  header .dot.err { background: #f85149; }
+  header button {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--fg);
+    border-radius: 0.5rem;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  #settings {
+    display: none;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.8rem 0.9rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  #settings.open { display: flex; }
+  #settings label { font-size: 0.8rem; color: var(--muted); }
+  #settings input {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 0.85rem;
+  }
+  #settings .hint { font-size: 0.75rem; color: var(--muted); }
+  #log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+  .msg {
+    max-width: 88%;
+    padding: 0.6rem 0.85rem;
+    border-radius: 0.9rem;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--user-bubble);
+    border-bottom-right-radius: 0.25rem;
+  }
+  .msg.assistant {
+    align-self: flex-start;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-bottom-left-radius: 0.25rem;
+  }
+  .msg.error {
+    align-self: stretch;
+    background: transparent;
+    border: 1px solid #f85149;
+    color: #f85149;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+  }
+  form {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.6rem 0.9rem;
+    padding-bottom: calc(0.6rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+  textarea {
+    flex: 1;
+    resize: none;
+    border: 1px solid var(--border);
+    border-radius: 0.7rem;
+    padding: 0.55rem 0.7rem;
+    font: inherit;
+    background: var(--bg);
+    color: var(--fg);
+    max-height: 30vh;
+  }
+  form button {
+    border: none;
+    border-radius: 0.7rem;
+    padding: 0 1rem;
+    background: var(--accent);
+    color: var(--accent-fg);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  form button:disabled { opacity: 0.5; }
+  form button.stop { background: #f85149; color: #fff; }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="dot" id="dot" title="endpoint status"></span>
+  <h1>Private LLM</h1>
+  <button id="clearBtn" type="button">Clear</button>
+  <button id="settingsBtn" type="button">Settings</button>
+</header>
+
+<div id="settings">
+  <label for="endpoint">API base URL</label>
+  <input id="endpoint" autocapitalize="off" autocorrect="off" spellcheck="false"
+         placeholder="https://mac-name.tailnet.ts.net">
+  <label for="model">Model</label>
+  <input id="model" autocapitalize="off" autocorrect="off" spellcheck="false"
+         placeholder="(first model reported by the server)" list="modelList">
+  <datalist id="modelList"></datalist>
+  <span class="hint">
+    Settings live in the URL hash, so a bookmark keeps them. When this page is
+    served from the same host as the API, the defaults just work.
+  </span>
+</div>
+
+<div id="log"></div>
+
+<form id="composer">
+  <textarea id="input" rows="1" placeholder="Message the model"
+            autocapitalize="sentences" enterkeyhint="send"></textarea>
+  <button id="sendBtn" type="submit">Send</button>
+</form>
+
+<script>
+"use strict";
+
+const $ = (id) => document.getElementById(id);
+const log = $("log"), input = $("input"), sendBtn = $("sendBtn"), dot = $("dot");
+
+// --- Settings, persisted in the URL hash -----------------------------------
+// Default endpoint is this page's own origin: when chat.html is served from
+// the same tailscale hostname as the API, no configuration is needed.
+function readSettings() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  return {
+    endpoint: params.get("endpoint") || location.origin,
+    model: params.get("model") || "",
+  };
+}
+function writeSettings() {
+  const params = new URLSearchParams();
+  if ($("endpoint").value && $("endpoint").value !== location.origin)
+    params.set("endpoint", $("endpoint").value);
+  if ($("model").value) params.set("model", $("model").value);
+  history.replaceState(null, "", params.size ? "#" + params : location.pathname);
+}
+function endpointBase() {
+  return ($("endpoint").value || location.origin).replace(/\/+$/, "");
+}
+
+const initial = readSettings();
+$("endpoint").value = initial.endpoint;
+$("model").value = initial.model;
+$("endpoint").addEventListener("change", () => { writeSettings(); probe(); });
+$("model").addEventListener("change", writeSettings);
+
+$("settingsBtn").addEventListener("click", () =>
+  $("settings").classList.toggle("open"));
+
+// --- Endpoint probe: green dot when /v1/models answers ----------------------
+let defaultModel = "";
+async function probe() {
+  dot.className = "dot";
+  try {
+    const res = await fetch(endpointBase() + "/v1/models");
+    const body = await res.json();
+    const ids = (body.data || []).map((m) => m.id);
+    $("modelList").innerHTML = ids.map((id) =>
+      `<option value="${id}"></option>`).join("");
+    defaultModel = ids[0] || "";
+    dot.className = "dot ok";
+    dot.title = "endpoint reachable";
+  } catch (err) {
+    dot.className = "dot err";
+    dot.title = "endpoint unreachable: " + err.message;
+  }
+}
+probe();
+
+// --- Conversation ------------------------------------------------------------
+const messages = [];
+let controller = null;
+
+function addBubble(role, text) {
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  div.textContent = text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+
+$("clearBtn").addEventListener("click", () => {
+  messages.length = 0;
+  log.innerHTML = "";
+});
+
+input.addEventListener("input", () => {
+  input.style.height = "auto";
+  input.style.height = input.scrollHeight + "px";
+});
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    $("composer").requestSubmit();
+  }
+});
+
+$("composer").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (controller) {            // acting as the Stop button mid-stream
+    controller.abort();
+    return;
+  }
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  input.style.height = "auto";
+
+  messages.push({ role: "user", content: text });
+  addBubble("user", text);
+  const bubble = addBubble("assistant", "…");
+
+  controller = new AbortController();
+  sendBtn.textContent = "Stop";
+  sendBtn.classList.add("stop");
+
+  try {
+    const res = await fetch(endpointBase() + "/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: $("model").value || defaultModel,
+        messages: messages,
+        stream: true,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+
+    // Server-sent events: lines of `data: {json}` ending with `data: [DONE]`.
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "", reply = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      for (const line of lines) {
+        // mlx_lm sends `: keepalive` comment lines while the prompt is
+        // being processed; only `data:` lines carry chunks.
+        if (!line.startsWith("data:")) continue;
+        const data = line.slice(5).trim();
+        if (!data || data === "[DONE]") continue;
+        const delta = JSON.parse(data).choices?.[0]?.delta?.content;
+        if (delta) {
+          reply += delta;
+          bubble.textContent = reply;
+          log.scrollTop = log.scrollHeight;
+        }
+      }
+    }
+    messages.push({ role: "assistant", content: reply });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      messages.push({ role: "assistant", content: bubble.textContent });
+    } else {
+      bubble.remove();
+      addBubble("error", String(err));
+      messages.pop();          // let the user retry the same question
+    }
+  } finally {
+    controller = null;
+    sendBtn.textContent = "Send";
+    sendBtn.classList.remove("stop");
+    input.focus();
+  }
+});
+</script>
+</body>
+</html>
